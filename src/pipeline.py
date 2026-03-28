@@ -224,6 +224,41 @@ class ScholarshipAnalyzer:
         self.results['ranked_students'] = result
         print(f"> 综合等级计算完成，共 **{len(result)}** 名学生\n")
 
+    # ── 第9步 ──────────────────────────────────────────────────────
+    def adjust_tied_students(self):
+        """同分调级：裸绩点 + 综合加分完全相同但等级不同的学生，用剩余预算上调。"""
+        h2("第9步：同分调级")
+        ranked = self.results['ranked_students']
+        adjusted, logs = processing.adjust_tied_students(ranked)
+
+        if not logs:
+            print("> 未发现需要调级的同分情况。\n")
+        else:
+            print(f"> 共发现 **{len(logs)}** 名学生需要调级：\n")
+            md_table(
+                ['专业', '学号', '姓名', '裸绩点', '综合加分', '综合绩点',
+                 '综合排名', '原等级', '调整为', '额外支出(元)', '剩余预算(元)'],
+                [
+                    [
+                        r['专业'], r['学号'], r['姓名'],
+                        f"{r['裸绩点']:.3f}", f"{r['综合加分']:.3f}",
+                        f"{r['综合绩点']:.3f}", r['综合排名'],
+                        r['原等级'], r['调整为'],
+                        f"{r['额外支出']:,.0f}", f"{r['剩余预算']:,.1f}",
+                    ]
+                    for r in logs
+                ],
+                ['l', 'l', 'l', 'r', 'r', 'r', 'r', 'l', 'l', 'r', 'r'],
+            )
+
+            # 汇总
+            total_extra = sum(r['额外支出'] for r in logs)
+            print(f"\n> 调级总额外支出：**{total_extra:,.0f} 元**")
+            print(f"> 调级后剩余预算：**{logs[-1]['剩余预算']:,.1f} 元**\n")
+
+        self.results['ranked_students'] = adjusted
+        self.results['adjustment_logs'] = logs
+
     # ── 报告 ──────────────────────────────────────────────────────
     def validate_budget(self, **kwargs):
         reporting.validate_budget(self.results['ranked_students'], **kwargs)
