@@ -1,0 +1,17 @@
+name: scholarship
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - openpyxl
+  - xlrd
+  - matplotlib
+  - seaborn
+  - jupyter
+  - ipykernel
+  - pip:
+      - tabulate

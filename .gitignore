@@ -1,0 +1,31 @@
+# ── Python ─────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.so
+
+# ── Jupyter ────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── 数据文件（含学生隐私，禁止提交）───────────
+data/input/
+data/output/
+
+# ── IDE / 编辑器 ──────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Conda / venv ──────────────────────────────
+.conda/
+.venv/
+venv/
