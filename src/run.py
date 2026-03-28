@@ -2,9 +2,14 @@
 入口脚本 —— 奖学金评定一键运行
 用法：
     cd /home/project/scholarship-evaluation/src
-    python run.py
+    python run.py                          # 默认截断法，仅提示
+    python run.py --rounding round         # 四舍五入
+    python run.py --rounding ceil          # 进一法
+    python run.py --auto-adjust            # 自动调整，保存到 adjusted/ 子文件夹
+    python run.py --rounding ceil --auto-adjust
 """
 
+import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -34,14 +39,34 @@ class _Tee:
         self._file.close()
 
 
+_ROUNDING_LABELS = {'floor': '截断法', 'round': '四舍五入', 'ceil': '进一法'}
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description='奖学金评定一键运行')
+    parser.add_argument(
+        '--rounding', choices=['floor', 'round', 'ceil'], default='floor',
+        help='名额取整方式: floor=截断(默认), round=四舍五入, ceil=进一',
+    )
+    parser.add_argument(
+        '--auto-adjust', action='store_true', default=False,
+        help='启用自动调整（同分异级+倒挂），结果保存到 adjusted/ 子文件夹',
+    )
+    args = parser.parse_args()
+
     root     = Path(__file__).resolve().parent.parent
     data_in  = root / 'data' / 'input'
     data_out = root / 'data' / 'output'
 
-    # ── 日志文件：data/output/logs/run_YYYYMMDD_HHMMSS.md ──────
+    # ── 根据模式选择输出根目录 ──────────────────────────────────
+    if args.auto_adjust:
+        out_root = root / 'data' / 'output_adjusted'
+    else:
+        out_root = data_out
+
+    # ── 日志文件：<out_root>/logs/run_YYYYMMDD_HHMMSS.md ───────
     ts      = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_dir = data_out / 'logs'
+    log_dir = out_root / 'logs'
     tee     = _Tee(log_dir / f'run_{ts}.md')
     sys.stdout = tee
 
@@ -49,14 +74,19 @@ def main() -> None:
         # 文档标题
         print(f"# 奖学金评定分析报告\n")
         print(f"> 运行时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        _run(data_in, data_out)
+        print(f"> 名额取整方式：**{_ROUNDING_LABELS[args.rounding]}**（`--rounding {args.rounding}`）\n")
+        if args.auto_adjust:
+            print("> ✅ 已启用自动调整（`--auto-adjust`）\n")
+        _run(data_in, out_root, rounding=args.rounding,
+             auto_adjust=args.auto_adjust)
     finally:
         sys.stdout = tee._term
         tee.close()
         print(f"\n日志已保存至: {log_dir / f'run_{ts}.md'}")
 
 
-def _run(data_in: Path, data_out: Path) -> None:
+def _run(data_in: Path, data_out: Path, rounding: str = 'floor',
+         auto_adjust: bool = False) -> None:
     # ── 文件路径 ────────────────────────────────────────────────
     normal_file = data_in / '22级裸绩点正考.xlsx'
     makeup_file = data_in / '22级裸绩点缓考.xlsx'
@@ -67,7 +97,9 @@ def _run(data_in: Path, data_out: Path) -> None:
             sys.exit(1)
 
     # ── 流水线 ──────────────────────────────────────────────────
-    analyzer = ScholarshipAnalyzer(str(normal_file), str(makeup_file))
+    analyzer = ScholarshipAnalyzer(str(normal_file), str(makeup_file),
+                                   rounding=rounding,
+                                   auto_adjust=auto_adjust)
 
     analyzer.clean_data()                           # 第1步
     analyzer.analyze_low_scores()                   # 第2步
@@ -78,7 +110,13 @@ def _run(data_in: Path, data_out: Path) -> None:
     analyzer.rank_students_by_major()               # 第7步
     analyzer.calculate_comprehensive_rank()         # 第8步
     analyzer.validate_budget()                      # 钱盘子验证
-    analyzer.report_adjustment_hints()              # 可调整提示
+
+    if auto_adjust:
+        analyzer.apply_auto_adjustment()            # 自动调整（含检测+应用+输出）
+        analyzer.validate_budget()                  # 重新验证钱盘子
+    else:
+        analyzer.report_adjustment_hints()          # 可调整提示（仅供参考）
+
     analyzer.generate_reports_by_major()
     analyzer.save_results(str(data_out))
 

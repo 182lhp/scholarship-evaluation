@@ -16,11 +16,14 @@ import reporting
 
 
 class ScholarshipAnalyzer:
-    def __init__(self, normal_exam_file: str, makeup_exam_file: str):
+    def __init__(self, normal_exam_file: str, makeup_exam_file: str,
+                 rounding: str = 'floor', auto_adjust: bool = False):
         self.normal_df = pd.read_excel(normal_exam_file)
         self.makeup_df = pd.read_excel(makeup_exam_file)
         self.merged_df = None
         self.results: dict = {}
+        self.rounding = rounding      # floor / round / ceil
+        self.auto_adjust = auto_adjust
 
     # ── 第1步 ──────────────────────────────────────────────────────
     def clean_data(self):
@@ -161,7 +164,7 @@ class ScholarshipAnalyzer:
                   .sort_values('总学分绩点', ascending=False).reset_index(drop=True))
             ms['裸绩排名'] = range(1, len(ms) + 1)
             ms['特等资格']  = ms['学号'].isin(eligible_ids)
-            quotas    = processing.compute_quotas(len(ms))
+            quotas    = processing.compute_quotas(len(ms), self.rounding)
             level_map = processing.assign_naked_levels(ms, eligible_ids, quotas)
             ms['裸绩等级'] = ms['学号'].map(level_map)
             all_ranked.append(ms)
@@ -214,8 +217,9 @@ class ScholarshipAnalyzer:
             ms_disq  = ms[ms['裸绩等级'] == '无资格'].copy()
 
             ms_valid['综合排名'] = range(1, len(ms_valid) + 1)
-            quotas   = processing.compute_quotas(len(ms_valid))
-            comp_map = processing.assign_comp_levels(ms_valid, quotas)
+            total_in_major = len(ms)          # 含无资格，用于名额 & 50% 分界线
+            quotas   = processing.compute_quotas(total_in_major, self.rounding)
+            comp_map = processing.assign_comp_levels(ms_valid, quotas, total_in_major)
             ms_valid['综合等级'] = ms_valid['学号'].map(comp_map)
             ms_disq[['综合排名', '综合等级']] = np.nan, '无资格'
             all_comp.append(pd.concat([ms_valid, ms_disq], ignore_index=True))
@@ -264,20 +268,98 @@ class ScholarshipAnalyzer:
             print("> 综合绩点更高的学生等级反而低于后面的同学：\n")
             md_table(
                 ['专业', '学号', '姓名', '裸绩点', '综合加分', '综合绩点',
-                 '综合排名', '当前等级', '后面最优', '需额外支出(元)'],
+                 '综合排名', '裸绩等级', '当前等级', '后面最优', '需额外支出(元)'],
                 [
                     [
                         r['专业'], r['学号'], r['姓名'],
                         f"{r['裸绩点']:.3f}", f"{r['综合加分']:.3f}",
                         f"{r['综合绩点']:.3f}", r['综合排名'],
-                        r['当前等级'], r['后面最优'],
+                        r['裸绩等级'], r['当前等级'], r['后面最优'],
                         f"{r['需额外支出']:,.0f}",
                     ]
                     for r in inversions
                 ],
-                ['l', 'l', 'l', 'r', 'r', 'r', 'r', 'l', 'l', 'r'],
+                ['l', 'l', 'l', 'r', 'r', 'r', 'r', 'l', 'l', 'l', 'r'],
             )
             print()
+        else:
+            print("> ✅ 未发现倒挂情况。\n")
+
+    def apply_auto_adjustment(self):
+        """自动应用同分异级 + 倒挂调整，在预算内贪心分配。
+        此方法产生完整的章节输出，不需要额外调用 report_adjustment_hints()。
+        """
+        h2("同分异级 & 倒挂自动调整")
+        ranked = self.results['ranked_students']
+        tied, inversions, surplus = processing.detect_tied_students(ranked)
+
+        if not tied and not inversions:
+            print(f"> 当前盈余：**{surplus:,.1f} 元**\n")
+            print("> ✅ 未发现同分异级或倒挂情况，无需调整。\n")
+            return
+
+        adjusted, applied_tied, applied_inv, remaining = \
+            processing.apply_adjustments(ranked, tied, inversions, surplus)
+
+        self.results['ranked_students'] = adjusted
+
+        tied_cost = sum(r['需额外支出'] for r in applied_tied)
+        inv_cost  = sum(r['需额外支出'] for r in applied_inv)
+
+        # ── 摘要 ──────────────────────────────────────────────
+        print(f"> 调整前盈余：**{surplus:,.1f} 元** → 调整后盈余：**{remaining:,.1f} 元**\n")
+
+        skipped_tied = len(tied) - len(applied_tied)
+        skipped_inv  = len(inversions) - len(applied_inv)
+        if skipped_tied + skipped_inv > 0:
+            print(f"> ⚠️ 因预算不足跳过：同分异级 {skipped_tied} 人、倒挂 {skipped_inv} 人\n")
+
+        # ── 同分异级明细 ──────────────────────────────────────
+        if applied_tied:
+            print(f"### 同分异级调整（已调整 {len(applied_tied)}/{len(tied)} 人，"
+                  f"花费 {tied_cost:,.0f} 元）\n")
+            md_table(
+                ['专业', '学号', '姓名', '裸绩点', '综合绩点',
+                 '综合排名', '原等级', '调至', '花费(元)'],
+                [
+                    [
+                        r['专业'], r['学号'], r['姓名'],
+                        f"{r['裸绩点']:.3f}", f"{r['综合绩点']:.3f}",
+                        r['综合排名'],
+                        r['当前等级'], r['建议调至'],
+                        f"{r['需额外支出']:,.0f}",
+                    ]
+                    for r in applied_tied
+                ],
+                ['l', 'l', 'l', 'r', 'r', 'r', 'l', 'l', 'r'],
+            )
+            print()
+        elif tied:
+            print(f"### 同分异级（检测到 {len(tied)} 人，因预算不足均未调整）\n")
+        else:
+            print("> ✅ 未发现同分异级情况。\n")
+
+        # ── 倒挂明细 ──────────────────────────────────────────
+        if applied_inv:
+            print(f"### 倒挂修正（已修正 {len(applied_inv)}/{len(inversions)} 人，"
+                  f"花费 {inv_cost:,.0f} 元）\n")
+            md_table(
+                ['专业', '学号', '姓名', '综合绩点',
+                 '综合排名', '裸绩等级', '原等级', '调至', '花费(元)'],
+                [
+                    [
+                        r['专业'], r['学号'], r['姓名'],
+                        f"{r['综合绩点']:.3f}", r['综合排名'],
+                        r['裸绩等级'], r['当前等级'], r['后面最优'],
+                        f"{r['需额外支出']:,.0f}",
+                    ]
+                    for r in applied_inv
+                ],
+                ['l', 'l', 'l', 'r', 'r', 'l', 'l', 'l', 'r'],
+            )
+            print()
+        elif inversions:
+            print(f"### 倒挂提示（检测到 {len(inversions)} 人，因预算不足均未修正）\n")
         else:
             print("> ✅ 未发现倒挂情况。\n")
 

@@ -12,4 +12,4 @@ from processing.bonus import (
     find_bonus_files, load_merged_bonus_map,
     load_bonus_map, find_bonus_file,
 )
-from processing.adjustment import detect_tied_students
+from processing.adjustment import detect_tied_students, apply_adjustments
