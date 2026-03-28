@@ -46,18 +46,19 @@ def attach_comprehensive_gpa(ranked: pd.DataFrame, bonus_map: pd.Series) -> pd.D
     return df
 
 
-def _max_allowed_idx(naked_lv: str, naked_rank: int, half: float) -> int:
+def _max_allowed_idx(effective_lv: str, naked_rank: int, half: float) -> int:
     """
     计算单个学生的最高允许综合等级索引（越小越高档）。
     规则：
     - 特等保留特等（返回 0）
-    - 最多升一档，且不能达到特等（索引最小为 1）
+    - 以 effective_lv（同裸绩点中最高等级）为基础，最多升一档，
+      且不能达到特等（索引最小为 1）
     - 裸绩排名后 50% 上限为单项（索引 4）
     """
-    if naked_lv == '特等':
+    if effective_lv == '特等':
         return 0
-    naked_idx    = GRADE_IDX.get(naked_lv, 5)
-    cap_upgrade  = max(naked_idx - 1, 1)
+    eff_idx      = GRADE_IDX.get(effective_lv, 5)
+    cap_upgrade  = max(eff_idx - 1, 1)
     cap_bottom50 = 4 if naked_rank > half else 0
     return max(cap_upgrade, cap_bottom50)
 
@@ -66,13 +67,24 @@ def assign_comp_levels(ms_valid: pd.DataFrame, quotas: dict) -> dict:
     """
     对单专业有效学生（已按综合绩点降序排列）分配综合等级。
     返回 {学号: 综合等级} 映射字典。
-    约束见 _max_allowed_idx。
+
+    升档基础修正：若学生裸绩点与更高等级的同学相同（同分因名额被
+    降等），则以同裸绩点中最高裸绩等级为升档基础。
     """
     half = len(ms_valid) / 2
 
-    max_idx = ms_valid.apply(
-        lambda r: _max_allowed_idx(r['裸绩等级'], r['裸绩排名'], half), axis=1
-    ).values
+    # 同裸绩点 → 最高裸绩等级（GRADE_IDX 越小档次越高）
+    naked_idx_series = ms_valid['裸绩等级'].map(lambda lv: GRADE_IDX.get(lv, 5))
+    best_by_gpa = naked_idx_series.groupby(ms_valid['裸绩点']).transform('min')
+    # 反查等级名称
+    idx_to_lv = {v: k for k, v in GRADE_IDX.items()}
+    effective_lv_series = best_by_gpa.map(idx_to_lv)
+
+    max_idx = [
+        _max_allowed_idx(eff_lv, naked_rank, half)
+        for eff_lv, naked_rank
+        in zip(effective_lv_series, ms_valid['裸绩排名'])
+    ]
 
     special_ids = set(ms_valid[ms_valid['裸绩等级'] == '特等']['学号'])
     comp_map    = {sid: '特等' for sid in special_ids}

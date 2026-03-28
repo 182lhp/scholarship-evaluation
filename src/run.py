@@ -77,8 +77,8 @@ def _run(data_in: Path, data_out: Path) -> None:
     analyzer.calculate_gpa()                        # 第6步
     analyzer.rank_students_by_major()               # 第7步
     analyzer.calculate_comprehensive_rank()         # 第8步
-    analyzer.adjust_tied_students()                 # 第9步：同分调级
     analyzer.validate_budget()                      # 钱盘子验证
+    analyzer.report_adjustment_hints()              # 可调整提示
     analyzer.generate_reports_by_major()
     analyzer.save_results(str(data_out))
 

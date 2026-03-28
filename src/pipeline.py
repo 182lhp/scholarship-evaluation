@@ -224,40 +224,62 @@ class ScholarshipAnalyzer:
         self.results['ranked_students'] = result
         print(f"> 综合等级计算完成，共 **{len(result)}** 名学生\n")
 
-    # ── 第9步 ──────────────────────────────────────────────────────
-    def adjust_tied_students(self):
-        """同分调级：裸绩点 + 综合加分完全相同但等级不同的学生，用剩余预算上调。"""
-        h2("第9步：同分调级")
+    # ── 可调整提示 ─────────────────────────────────────────────────
+    def report_adjustment_hints(self):
+        """检测同分异级 & 倒挂，仅写入 MD 日志供人工参考，不自动修改等级。"""
+        h2("可调整提示（仅供参考，未自动修改）")
         ranked = self.results['ranked_students']
-        adjusted, logs = processing.adjust_tied_students(ranked)
+        tied, inversions, surplus = processing.detect_tied_students(ranked)
 
-        if not logs:
-            print("> 未发现需要调级的同分情况。\n")
-        else:
-            print(f"> 共发现 **{len(logs)}** 名学生需要调级：\n")
+        print(f"> 当前剩余预算：**{surplus:,.1f} 元**\n")
+
+        # ── 同分异级 ──────────────────────────────────────────
+        if tied:
+            total_cost = sum(r['需额外支出'] for r in tied)
+            print(f"### 同分异级（{len(tied)} 人，全部调整需 {total_cost:,.0f} 元）\n")
+            print("> 裸绩点 + 综合加分完全相同，但因名额比例切割落入不同等级：\n")
             md_table(
                 ['专业', '学号', '姓名', '裸绩点', '综合加分', '综合绩点',
-                 '综合排名', '原等级', '调整为', '额外支出(元)', '剩余预算(元)'],
+                 '综合排名', '当前等级', '建议调至', '需额外支出(元)'],
                 [
                     [
                         r['专业'], r['学号'], r['姓名'],
                         f"{r['裸绩点']:.3f}", f"{r['综合加分']:.3f}",
                         f"{r['综合绩点']:.3f}", r['综合排名'],
-                        r['原等级'], r['调整为'],
-                        f"{r['额外支出']:,.0f}", f"{r['剩余预算']:,.1f}",
+                        r['当前等级'], r['建议调至'],
+                        f"{r['需额外支出']:,.0f}",
                     ]
-                    for r in logs
+                    for r in tied
                 ],
-                ['l', 'l', 'l', 'r', 'r', 'r', 'r', 'l', 'l', 'r', 'r'],
+                ['l', 'l', 'l', 'r', 'r', 'r', 'r', 'l', 'l', 'r'],
             )
+            print()
+        else:
+            print("> ✅ 未发现同分异级情况。\n")
 
-            # 汇总
-            total_extra = sum(r['额外支出'] for r in logs)
-            print(f"\n> 调级总额外支出：**{total_extra:,.0f} 元**")
-            print(f"> 调级后剩余预算：**{logs[-1]['剩余预算']:,.1f} 元**\n")
-
-        self.results['ranked_students'] = adjusted
-        self.results['adjustment_logs'] = logs
+        # ── 倒挂 ──────────────────────────────────────────────
+        if inversions:
+            total_cost = sum(r['需额外支出'] for r in inversions)
+            print(f"### 倒挂提示（{len(inversions)} 人，全部修正需 {total_cost:,.0f} 元）\n")
+            print("> 综合绩点更高的学生等级反而低于后面的同学：\n")
+            md_table(
+                ['专业', '学号', '姓名', '裸绩点', '综合加分', '综合绩点',
+                 '综合排名', '当前等级', '后面最优', '需额外支出(元)'],
+                [
+                    [
+                        r['专业'], r['学号'], r['姓名'],
+                        f"{r['裸绩点']:.3f}", f"{r['综合加分']:.3f}",
+                        f"{r['综合绩点']:.3f}", r['综合排名'],
+                        r['当前等级'], r['后面最优'],
+                        f"{r['需额外支出']:,.0f}",
+                    ]
+                    for r in inversions
+                ],
+                ['l', 'l', 'l', 'r', 'r', 'r', 'r', 'l', 'l', 'r'],
+            )
+            print()
+        else:
+            print("> ✅ 未发现倒挂情况。\n")
 
     # ── 报告 ──────────────────────────────────────────────────────
     def validate_budget(self, **kwargs):
