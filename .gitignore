@@ -13,6 +13,7 @@ build/
 # ── 数据文件（含学生隐私，禁止提交）───────────
 data/input/
 data/output/
+data/output_adjusted/
 
 # ── IDE / 编辑器 ──────────────────────────────
 .vscode/
