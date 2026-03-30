@@ -18,8 +18,8 @@ def generate_reports_by_major(ranked: pd.DataFrame, majors: list[str]) -> None:
         total = len(md)
         h3(f"{major}（参评 {total} 人）")
 
-        print(f"绩点范围：{md['总学分绩点'].min():.1f} ~ {md['总学分绩点'].max():.1f}，"
-              f"均值：{md['总学分绩点'].mean():.2f}\n")
+        print(f"绩点范围：{md['裸绩点'].min():.3f} ~ {md['裸绩点'].max():.3f}，"
+              f"均值：{md['裸绩点'].mean():.3f}\n")
 
         dist_rows = [[lv, n, f"{n/total*100:.1f}%"]
                      for lv in all_levels
@@ -31,5 +31,5 @@ def generate_reports_by_major(ranked: pd.DataFrame, majors: list[str]) -> None:
         for _, row in md.nsmallest(5, '裸绩排名').iterrows():
             mark = '★' if row['裸绩等级'] == '特等' else ''
             top5.append([int(row['裸绩排名']), f"{mark}{row['姓名']}",
-                         f"{row['总学分绩点']:.1f}", row['裸绩等级']])
-        md_table(['名次', '姓名', '总学分绩点', '裸绩等级'], top5, ['r', 'l', 'r', 'l'])
+                         f"{row['裸绩点']:.3f}", row['裸绩等级']])
+        md_table(['名次', '姓名', '裸绩点', '裸绩等级'], top5, ['r', 'l', 'r', 'l'])

@@ -140,11 +140,11 @@ class ScholarshipAnalyzer:
         print("**各专业前3名**\n")
         for major in sorted(gpa.index.get_level_values('专业').unique()):
             top3 = (pd.DataFrame(gpa.xs(major, level='专业'))
-                    .sort_values('总学分绩点', ascending=False).head(3))
+                    .sort_values('裸绩点', ascending=False).head(3))
             h3(major)
             md_table(
-                ['名次', '姓名', '总学分绩点'],
-                [[i + 1, idx[1], f"{row['总学分绩点']:.1f}"]
+                ['名次', '姓名', '裸绩点'],
+                [[i + 1, idx[1], f"{row['裸绩点']:.3f}"]
                  for i, (idx, row) in enumerate(top3.iterrows())],
                 ['r', 'l', 'r'],
             )

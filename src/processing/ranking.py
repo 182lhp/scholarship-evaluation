@@ -27,7 +27,7 @@ def compute_quotas(total: int, rounding: str = 'floor') -> dict:
 
 def assign_naked_levels(major_df: pd.DataFrame, eligible_ids: set, quotas: dict) -> dict:
     """
-    对单个专业的学生（已按总学分绩点降序排列）分配裸绩等级。
+    对单个专业的学生（已按裸绩点降序排列）分配裸绩等级。
     返回 {学号: 等级} 映射字典。
     """
     top_eligible = major_df.head(quotas['特等']).loc[
