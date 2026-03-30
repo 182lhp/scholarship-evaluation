@@ -1,7 +1,7 @@
 """
 同分异级 & 倒挂检测（仅提示，不自动调整）
 扫描所有专业，找出：
-  1. 裸绩点 + 综合加分完全相同但因名额切割落入不同等级的学生组
+  1. 综合绩点完全相同但因名额切割落入不同等级的学生组
   2. 综合绩点更高的学生等级反而更低的"倒挂"
 将结果以建议列表返回，供人工决策。
 """
@@ -54,12 +54,20 @@ def detect_tied_students(
     tied: list[dict] = []
 
     # ── 同分异级检测 ──────────────────────────────────────────
+    # 综合绩点相同但综合等级不同 → 同分异级
+    # 需遵守升档上限：最多升一档（不可达特等）、后50%天花板为单项
     for major in sorted(df['专业'].unique()):
-        mask = (df['专业'] == major) & (~df['综合等级'].isin(skip_levels))
+        mask_all = df['专业'] == major
+        half = mask_all.sum() / 2           # 专业总人数（含无资格）的50%
+
+        mask = mask_all & (~df['综合等级'].isin(skip_levels))
         major_df = df.loc[mask]
 
-        groups = major_df.groupby(['裸绩点', '综合加分'])
-        for (naked_gpa, bonus), grp in groups:
+        # 同裸绩点 → 最佳裸绩排名
+        best_rank_map = major_df.groupby('裸绩点')['裸绩排名'].transform('min')
+
+        groups = major_df.groupby('综合绩点')
+        for comp_gpa, grp in groups:
             if len(grp) < 2:
                 continue
             levels_in_group = grp['综合等级'].unique()
@@ -70,26 +78,54 @@ def detect_tied_students(
                 levels_in_group,
                 key=lambda lv: LEVEL_ORDER.get(lv, 99),
             )
+            target_idx = GRADE_IDX.get(target_level, 5)
             target_amount = award_amounts.get(target_level, 0)
 
-            for _, row in grp.iterrows():
+            for idx, row in grp.iterrows():
                 cur_lv = row['综合等级']
                 if cur_lv == target_level:
                     continue
+
+                # ── 升档上限检查（与倒挂检测一致）──────────
+                naked_lv = row['裸绩等级']
+                naked_idx = GRADE_IDX.get(naked_lv, 5)
+                cur_idx = GRADE_IDX.get(cur_lv, 5)
+
+                if naked_lv == '特等':
+                    continue
+
+                cap_upgrade = 3 if naked_idx >= 4 else max(naked_idx - 1, 1)
+                best_rank = best_rank_map.at[idx]
+                cap_bottom50 = 4 if best_rank > half else 0
+                max_allowed_idx = max(cap_upgrade, cap_bottom50)
+
+                # 已经到达升档上限 → 不可再调
+                if cur_idx <= max_allowed_idx:
+                    continue
+
+                # 建议目标不能超过升档上限
+                actual_target_idx = max(target_idx, max_allowed_idx)
+                actual_target = _IDX_TO_LV[actual_target_idx]
+
+                # 调整后与当前相同 → 无意义
+                if actual_target_idx >= cur_idx:
+                    continue
+
                 cur_amount = award_amounts.get(cur_lv, 0)
-                cost_diff = target_amount - cur_amount
+                actual_target_amount = award_amounts.get(actual_target, 0)
+                cost_diff = actual_target_amount - cur_amount
                 if cost_diff <= 0:
                     continue
                 tied.append({
                     '专业': major,
                     '学号': row['学号'],
                     '姓名': row['姓名'],
-                    '裸绩点': naked_gpa,
-                    '综合加分': bonus,
-                    '综合绩点': row['综合绩点'],
+                    '裸绩点': row['裸绩点'],
+                    '综合加分': row['综合加分'],
+                    '综合绩点': comp_gpa,
                     '综合排名': row.get('综合排名', ''),
                     '当前等级': cur_lv,
-                    '建议调至': target_level,
+                    '建议调至': actual_target,
                     '需额外支出': cost_diff,
                 })
 

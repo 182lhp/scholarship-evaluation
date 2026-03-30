@@ -161,7 +161,7 @@ class ScholarshipAnalyzer:
         all_ranked = []
         for major in majors:
             ms = (student_gpa[student_gpa['专业'] == major]
-                  .sort_values('总学分绩点', ascending=False).reset_index(drop=True))
+                  .sort_values('裸绩点', ascending=False).reset_index(drop=True))
             ms['裸绩排名'] = range(1, len(ms) + 1)
             ms['特等资格']  = ms['学号'].isin(eligible_ids)
             quotas    = processing.compute_quotas(len(ms), self.rounding)
@@ -241,7 +241,7 @@ class ScholarshipAnalyzer:
         if tied:
             total_cost = sum(r['需额外支出'] for r in tied)
             print(f"### 同分异级（{len(tied)} 人，全部调整需 {total_cost:,.0f} 元）\n")
-            print("> 裸绩点 + 综合加分完全相同，但因名额比例切割落入不同等级：\n")
+            print("> 综合绩点相同，但因名额比例切割落入不同等级：\n")
             md_table(
                 ['专业', '学号', '姓名', '裸绩点', '综合加分', '综合绩点',
                  '综合排名', '当前等级', '建议调至', '需额外支出(元)'],
